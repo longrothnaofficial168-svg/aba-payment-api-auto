@@ -5,56 +5,59 @@ const { getFirestore, collection, query, where, getDocs, updateDoc } = require('
 const app = express();
 app.use(express.json());
 
-// --- ដាក់ Firebase Config របស់អ្នកនៅទីនេះ ---
+// --- ត្រូវប្រាកដថា Config នេះត្រូវជាមួយ Firebase របស់អ្នក ១០០% ---
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIza...", 
+  authDomain: "your-project.firebaseapp.com",
+  projectId: "your-project-id",
+  storageBucket: "your-project.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:..."
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
-// ផ្លូវ (Route) សម្រាប់ Webhook
 app.post('/api/aba-webhook', async (req, res) => {
     try {
-        const notiText = req.body.text || "";
-        console.log("សារទទួលបាន៖", notiText);
+        const message = req.body.message;
+        if (!message || !message.text) return res.status(200).send("No Text");
 
-        if (!notiText) {
-            return res.status(400).send("No text provided");
-        }
+        const notiText = message.text;
+        console.log("សារដែលទទួលបាន:", notiText);
 
-        let durationMonths = 0;
-        let priceString = "";
-
-        if (notiText.includes("9.99")) { durationMonths = 1; priceString = "$9.99"; }
-        else if (notiText.includes("109.99")) { durationMonths = 12; priceString = "$109.99"; }
-
-        if (durationMonths > 0) {
-            const userQuery = query(collection(db, "users"), 
-                              where("status", "==", "pending"), 
-                              where("pendingAmount", "==", priceString));
+        // ឆែករកលេខ 9.99 ក្នុងសារ (មិនថាមានសញ្ញា $ ឬអត់)
+        if (notiText.includes("9.99")) {
+            // ស្វែងរក User ដែលកំពុងរង់ចាំ
+            const userQuery = query(
+                collection(db, "users"), 
+                where("status", "==", "pending"),
+                where("pendingAmount", "==", "$9.99")
+            );
 
             const querySnapshot = await getDocs(userQuery);
-            if (querySnapshot.empty) return res.status(404).send("User not found");
 
-            for (const userDoc of querySnapshot.docs) {
-                const expiryDate = new Date();
-                expiryDate.setMonth(expiryDate.getMonth() + durationMonths);
-                await updateDoc(userDoc.ref, { status: "paid", expiryDate: expiryDate });
+            if (querySnapshot.empty) {
+                console.log("រកមិនឃើញ User ដែលមាន Status 'pending' និង Amount '$9.99'");
+                return res.status(200).send("No matching user found");
             }
-            return res.status(200).send("Success");
+
+            // ធ្វើការ Update Status ទៅជា 'paid'
+            for (const userDoc of querySnapshot.docs) {
+                await updateDoc(userDoc.ref, { 
+                    status: "paid",
+                    updatedAt: new Date()
+                });
+                console.log("បាន Update ជោគជ័យសម្រាប់ ID:", userDoc.id);
+            }
+            return res.status(200).send("Success Updated");
         }
-        res.status(422).send("Invalid Amount");
+
+        res.status(200).send("Not a payment message");
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Server Error");
+        console.error("Error occurred:", error.message);
+        res.status(500).send(error.message);
     }
 });
 
-// សំខាន់បំផុត៖ សម្រាប់ Vercel ត្រូវប្រើ module.exports
 module.exports = app;
